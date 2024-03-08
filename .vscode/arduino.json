@@ -2,5 +2,6 @@
     "configuration": "cpu=atmega2560",
     "board": "arduino:avr:mega",
     "port": "COM3",
-    "sketch": "Test Code\\dual_ultrasonic_test.ino"
+    "output": "../ArduinoOutput",
+    "sketch": "Test Codes\\motor_controller_test.ino"
 }
