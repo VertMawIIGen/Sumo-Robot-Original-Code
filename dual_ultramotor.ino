@@ -1,7 +1,7 @@
-const int left_trig = 13;
-const int left_echo = 12;
-const int right_trig = 11;
-const int right_echo = 10;
+  const int left_trig = 10;
+const int left_echo = 11;
+const int right_trig = 8;
+const int right_echo = 9;
 
 const float speedOfSound = 0.034282;
 
@@ -61,36 +61,36 @@ void loop()
     delay(10);
     int distance_left = getUltrasoundDistance(right_trig, right_echo);
 
-    if (distance_left < 100)
+    if (distance_left < 10)
     {
-        if (distance_right < 100)
+        if (distance_right < 10)
         {
             Serial.println("Center.");
             Serial.println(distance_left);
             Serial.println(distance_right);
-            analogWrite(ena_pin, 100);
-		    analogWrite(enb_pin, 100);
+            analogWrite(ena_pin, 0);
+		        analogWrite(enb_pin, 0);
         }
         else
         {
             Serial.println("Left.");
             Serial.println(distance_left);
             Serial.println(distance_right);
-            analogWrite(ena_pin, 100);
+            analogWrite(ena_pin, 150);
         }
     }
-    else if (distance_right < 100)
+    else if (distance_right < 10)
     {
         Serial.println("Right.");
         Serial.println(distance_left);
         Serial.println(distance_right);
-		analogWrite(enb_pin, 100);
+		    analogWrite(enb_pin, 150);
     }
     else {
       Serial.println("Neither");
       Serial.println(distance_left);
       Serial.println(distance_right);
       analogWrite(ena_pin, 0);
-	  analogWrite(enb_pin, 0);
+	    analogWrite(enb_pin, 80);
     }
 }
