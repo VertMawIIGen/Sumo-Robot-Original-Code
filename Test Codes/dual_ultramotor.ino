@@ -1,4 +1,4 @@
-  const int left_trig = 10;
+const int left_trig = 10;
 const int left_echo = 11;
 const int right_trig = 8;
 const int right_echo = 9;
@@ -13,7 +13,7 @@ const int enb_pin = 2; // output right motor
 const int in3_pin = 4;
 const int in4_pin = 3;
 
-long getUltrasoundDistance(int trigPin, int echoPin)
+long getUltrasoundDistance(int trigPin, int echoPin) // optimize by removing calculation
 {
     long duration;
 
@@ -69,7 +69,7 @@ void loop()
             Serial.println(distance_left);
             Serial.println(distance_right);
             analogWrite(ena_pin, 0);
-		        analogWrite(enb_pin, 0);
+            analogWrite(enb_pin, 0);
         }
         else
         {
@@ -77,6 +77,7 @@ void loop()
             Serial.println(distance_left);
             Serial.println(distance_right);
             analogWrite(ena_pin, 150);
+            analogWrite(enb_pin, 0);
         }
     }
     else if (distance_right < 10)
@@ -84,13 +85,15 @@ void loop()
         Serial.println("Right.");
         Serial.println(distance_left);
         Serial.println(distance_right);
-		    analogWrite(enb_pin, 150);
+        analogWrite(enb_pin, 150);
+        analogWrite(ena_pin, 150);
     }
-    else {
-      Serial.println("Neither");
-      Serial.println(distance_left);
-      Serial.println(distance_right);
-      analogWrite(ena_pin, 0);
-	    analogWrite(enb_pin, 80);
+    else
+    {
+        Serial.println("Neither");
+        Serial.println(distance_left);
+        Serial.println(distance_right);
+        analogWrite(ena_pin, 0);
+        analogWrite(enb_pin, 80);
     }
 }
