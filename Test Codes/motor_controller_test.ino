@@ -1,10 +1,10 @@
-const int ena_pin = 7; // output left motor
-const int in1_pin = 6;
-const int in2_pin = 5;
+const int ena_pin = 6; // output left motor
+const int in1_pin = 7;
+const int in2_pin = 8;
 
-const int enb_pin = 2; // output right motor
-const int in3_pin = 4;
-const int in4_pin = 3;
+const int enb_pin = 11; // output right motor
+const int in3_pin = 9;
+const int in4_pin = 10;
 
 void setup() {
     pinMode(ena_pin, OUTPUT);

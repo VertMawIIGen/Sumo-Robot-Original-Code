@@ -2,19 +2,11 @@
 #include <VL6180X.h>
 #include <Adafruit_MPU6050.h>
 #include <Adafruit_Sensor.h>
-#include <NewPing.h>
 
 const int left_trig = 10;
 const int left_echo = 11;
 const int right_trig = 9;
 const int right_echo = 8;
-
-NewPing ultrasonic[2] = {
-    NewPing(left_trig, left_echo, 800),
-    NewPing(right_trig, right_echo, 800)
-}
-
-long ultrasonic_values[2]; // try this approach
 
 const int ena_pin = 7; // output left motor
 const int in1_pin = 6;
@@ -31,10 +23,13 @@ const int frontRightIR = A1;
 const int frontLeftIR = A0;
 const int backRightIR = A2;
 
+int valueLineChecking = 0;
+int valueFrontChecking = 6;
 float biggestAcceleration = 0; // change data type for efficiency
 
 void setup()
 {
+    Serial.begin(9600);
     Wire.begin();
     sensor.init();
     sensor.configureDefault();
@@ -92,10 +87,12 @@ void setup()
 
 void loop()
 {
-    int valueLineChecking = lineChecking();
+    valueLineChecking = lineChecking();
+    Serial.println("Line checking!");
 
     if (lineChecking() != 0)
     {
+        Serial.println("Line found!");
         do
         {
             if (valueLineChecking = 1)
@@ -103,25 +100,29 @@ void loop()
                 backwardsMotor();
                 setLeftMotorSpeed(255);
                 setRightMotorSpeed(230);
+                Serial.println("Line checking value is 1!");
             }
             else if (valueLineChecking = 2)
             { // front right
                 backwardsMotor();
                 setLeftMotorSpeed(230);
                 setRightMotorSpeed(255);
+                Serial.println("Line checking value is 2!");
             }
             else if (valueLineChecking = 3)
             { // back right
                 forwardMotor();
                 setLeftMotorSpeed(255);
                 setRightMotorSpeed(230);
+                Serial.println("Line checking value is 3!");
             }
             valueLineChecking = lineChecking();
         } while (valueLineChecking != 0);
+        Serial.println("Line checking loop has ended.");
     }
     else
     {
-        int valueFrontChecking;
+        Serial.println("Front checking!");
 
         sensors_event_t a, g, temp;
         mpu.getEvent(&a, &g, &temp);
@@ -134,6 +135,7 @@ void loop()
 
         if (abs(sideAcceleration) > 4)
         { // got hit on the side
+            Serial.println("Side acceleration loop has started!");
             do
             {
                 if (sideAcceleration < 0)
@@ -151,49 +153,60 @@ void loop()
 
                 valueLineChecking = lineChecking();
                 valueFrontChecking = frontDetection();
+                Serial.println("Side acceleration looping.");
             } while ((valueLineChecking = 0) && (valueFrontChecking != 0));
             biggestAcceleration = 0;
+            Serial.println("Side acceleration loop ended.");
         }
         else
         {
             valueFrontChecking = frontDetection();
+            Serial.println("Front checking is going.");
 
             if (valueFrontChecking = 1)
             {
                 setLeftMotorSpeed(100);
                 setRightMotorSpeed(70);
+                Serial.println("Front checking value is 1");
             }
             else if (valueFrontChecking = 2)
             {
                 setRightMotorSpeed(100);
                 setLeftMotorSpeed(70);
+                Serial.println("Front checking value is 2");
             }
             else if (valueFrontChecking = 3)
             {
                 forwardMotor();
                 setBothMotorSpeeds(100);
+                Serial.println("Front checking value is 3");
             }
             else if (valueFrontChecking = 4)
             {
                 turnLeftOnTheSpot();
                 setBothMotorSpeeds(75);
+                Serial.println("Front checking value is 4");
             }
             else if (valueFrontChecking = 5)
             {
                 turnRightOnTheSpot();
                 setBothMotorSpeeds(75);
+                Serial.println("Front checking value is 5");
             }
             else if (valueFrontChecking = 6)
             {
+                Serial.println("Front checking value is 6");
                 if (biggestAcceleration < 0)
                 {
                     turnRightOnTheSpot();
                     setBothMotorSpeeds(70);
+                    Serial.println("Turning right!");
                 }
                 else
                 {
                     turnLeftOnTheSpot();
                     setBothMotorSpeeds(70);
+                    Serial.println("Turning right!");
                 }
             }
         }
@@ -201,7 +214,7 @@ void loop()
 }
 
 int ultrasonicDistance(int trigPin, int echoPin)
-{ 
+{ // distance in cm is duration / 58.31
     digitalWrite(trigPin, LOW);
     delayMicroseconds(2);
 
@@ -209,7 +222,8 @@ int ultrasonicDistance(int trigPin, int echoPin)
     delayMicroseconds(10);
     digitalWrite(trigPin, LOW);
 
-    int duration = pulseIn(echoPin, HIGH, 8000); // remove pulseIn
+    int duration = pulseIn(echoPin, HIGH, 5900);
+
     return duration;
 }
 
@@ -282,7 +296,7 @@ void matchStart()
     }
 }
 
-int frontDetection()
+int frontDetection() // check the logic later
 {
     int distance_front = sensor.readRangeContinuousMillimeters();
     int left_time = ultrasonicDistance(left_trig, left_echo);
