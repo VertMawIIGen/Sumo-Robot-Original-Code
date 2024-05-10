@@ -1,37 +1,44 @@
 #include <Wire.h>
-#include <VL6180X.h>
+#include <VL53L0X.h>
 #include <Adafruit_Sensor.h>
 #include <NewPing.h>
-// #include <Adafruit_MPU6050.h>
+#include <Adafruit_MPU6050.h>
 
 #define maxDistance 50
-#define PING_INTERVAL 35 // ping interval must be high (30 is not enough) change later todo Nowfn
+#define PING_INTERVAL 35
 #define SONAR_NUM 4
 #define MOTOR_DELAY 30
 
-const int trigPin1 = 22; // front left
+// front left ultrasonic
+const int trigPin1 = 22;
 const int echoPin1 = 23;
 
-const int trigPin2 = 24; // front right
+// front right ultrasonic
+const int trigPin2 = 24;
 const int echoPin2 = 25;
 
-const int trigPin3 = 28; // left side
+// left side ultrasonic
+const int trigPin3 = 28;
 const int echoPin3 = 29;
 
-const int trigPin4 = 26; // right side
+// right side ultrasonic
+const int trigPin4 = 26;
 const int echoPin4 = 27;
 
-NewPing sonar[SONAR_NUM] = {                  // Sensor object array.
-    NewPing(trigPin1, echoPin1, maxDistance), // Each sensor's trigger pin, echo pin, and max distance to ping.
+// ultrasonic array for library
+NewPing sonar[SONAR_NUM] = {
+    NewPing(trigPin1, echoPin1, maxDistance),
     NewPing(trigPin2, echoPin2, maxDistance),
     NewPing(trigPin3, echoPin3, maxDistance),
     NewPing(trigPin4, echoPin4, maxDistance)};
 
+// ir line sensors
 const int frontLeftIR = 2;
 const int frontRightIR = 3;
 const int backLeftIR = 12;
-const int backRightIR = 13;
+const int backRightIR = 4;
 
+// motor driver
 const int enaPin = 6;
 const int in1Pin = 7;
 const int in2Pin = 8;
@@ -40,19 +47,24 @@ const int enbPin = 11;
 const int in3Pin = 9;
 const int in4Pin = 10;
 
-VL6180X tofSensor;
-// Adafruit_MPU6050 mpu; gyroscope broke,
+// front TOF sensor
+VL53L0X tofSensor;
 
-unsigned long pingTimer[SONAR_NUM];
-unsigned int ultrasonic_status[SONAR_NUM];
+// accelerometer
+Adafruit_MPU6050 mpu;
+
+unsigned long pingTimer[SONAR_NUM]; // time when sensor pings
+int ultrasonic_status[SONAR_NUM];
 int currentSensor = 0;
 
 int lineSensorStatus = 0;
 bool tofStatus = 0;
 
-bool turnDirection = true;
+bool turnDirection = true; // true = clockwise, vice versa
 bool searchMode;
 unsigned long motorStopDelay;
+
+bool gotHit = false;
 
 void setup()
 {
@@ -75,26 +87,40 @@ void setup()
     pinMode(in3Pin, OUTPUT);
     pinMode(in4Pin, OUTPUT);
 
+    pinMode(frontLeftIR, INPUT);
+    pinMode(frontRightIR, INPUT);
+    pinMode(backLeftIR, INPUT);
+    pinMode(backRightIR, INPUT);
+
     tofSensor.init();
-    tofSensor.configureDefault();
-    tofSensor.setScaling(3);
-
-    tofSensor.writeReg(VL6180X::SYSRANGE__MAX_CONVERGENCE_TIME, 30);
-    tofSensor.writeReg16Bit(VL6180X::SYSALS__INTEGRATION_PERIOD, 50);
-
     tofSensor.setTimeout(500);
+    tofSensor.startContinuous();
 
-    tofSensor.stopContinuous();
-    delay(300);
-    tofSensor.startRangeContinuous(90);
+    if (!mpu.begin())
+    {
+        while (1)
+        {
+            delay(10);
+        }
+    }
+
+    mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
+    mpu.setGyroRange(MPU6050_RANGE_500_DEG);
+    mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
+    mpu.setTemperatureStandby(true);
+    mpu.setGyroStandby(true, true, true);
+    mpu.setAccelerometerStandby(false, false, true);
 
     matchStart();
+
+    // set the time for the sensors to ping
     for (int i = 1; i < SONAR_NUM; i++)
         pingTimer[i] = pingTimer[i - 1] + PING_INTERVAL;
 }
 
 void loop()
 {
+    // ultrasonic sensor ping
     for (int i = 0; i < 4; i++)
     {
         if (millis() >= pingTimer[i])
@@ -114,43 +140,40 @@ void loop()
             sonar[currentSensor].ping_timer(echoCheck);
         }
     }
-    sensorCheck();
+
+    linesensorCheck();
 
     switch (lineSensorStatus)
     {
     case 1:
         setMotorSpeed(-255, -185);
-        turnDirection(true);
+        turnDirection = true;
         break;
     case 2:
         setMotorSpeed(-185, -255);
-        turnDirection(false);
+        turnDirection = false;
         break;
     case 3:
         setMotorSpeed(255, 185);
-        turnDirection(true);
+        turnDirection = true;
         break;
     case 4:
         setMotorSpeed(185, 255);
-        turnDirection(false);
+        turnDirection = false;
         break;
-    }
-    
-    if (searchMode) {
-        digitalWrite(LED_BUILTIN, HIGH);
-    }
-    else {
-        digitalWrite(LED_BUILTIN, LOW);
+    default:
+        accelCheck();
     }
 }
 
 void echoCheck()
 {
+    // check if ultrasonic returns a measurement
     if (sonar[currentSensor].check_timer())
         ultrasonic_status[currentSensor] = 1;
 }
 
-void sensorCheck()
+void linesensorCheck()
 {
     if (digitalRead(frontLeftIR))
     {
@@ -174,10 +197,23 @@ void sensorCheck()
     }
 }
 
+void accelCheck()
+{
+    sensors_event_t a, g, temp;
+    mpu.getEvent(&a, &g, &temp);
+
+    int sideAccelerationY = a.acceleration.y;
+    int sideAccelerationX = a.acceleration.x;
+    if ((abs(sideAccelerationX) > 4) || (abs(sideAccelerationY) > 4))
+    {
+        gotHit = true;
+    }
+}
+
 void matchStart()
 {
     int distance_front = tofSensor.readRangeContinuousMillimeters();
-    while (distance_front < 300)
+    while (distance_front < 200)
     {
         distance_front = tofSensor.readRangeContinuousMillimeters();
     }
@@ -213,6 +249,8 @@ void oneSensorCycle()
                 setMotorSpeed(185, 255);
             }
         }
+
+        gotHit = false;
     }
     else if (tofStatus)
     {
@@ -225,6 +263,8 @@ void oneSensorCycle()
         { // enemy is straight on, go forwards
             setMotorSpeed(255, 255);
         }
+
+        gotHit = false;
     }
     else if (ultrasonic_status[1])
     {
@@ -240,11 +280,22 @@ void oneSensorCycle()
             // enemy is to the right of the robot, go right harder, but also a bit forwards
             setMotorSpeed(255, 185);
         }
+
+        gotHit = false;
     }
     else
     { // search mode
         searchMode = true;
-        setMotorSpeed(75, 75);
+
+        if (gotHit)
+        {
+            setMotorSpeed(100, 100);
+        }
+        else
+        {
+            setMotorSpeed(75, 75);
+        }
+
         if (ultrasonic_status[2])
         {
             turnOnTheSpot(true);
@@ -269,7 +320,7 @@ void oneSensorCycle()
 void frontSensorStatus()
 {
     int distance = tofSensor.readRangeContinuousMillimeters();
-    if (distance != 765)
+    if (distance < 350)
     {
         tofStatus = 1;
     }

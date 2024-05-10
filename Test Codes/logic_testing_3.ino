@@ -1,355 +1,402 @@
-    #include <Wire.h>
-    #include <VL6180X.h>
-    #include <Adafruit_Sensor.h>
-    #include <NewPing.h>
-    // #include <Adafruit_MPU6050.h>
+#include <Wire.h>
+#include <VL53L0X.h>
+#include <Adafruit_Sensor.h>
+#include <NewPing.h>
+#include <Adafruit_MPU6050.h>
 
-    #define maxDistance 30
-    #define PING_INTERVAL 30 // ping interval must be high (30 is not enough) change later todo Nowfn
-    #define SONAR_NUM 4
+#define maxDistance 50
+#define PING_INTERVAL 35
+#define SONAR_NUM 4
+#define MOTOR_DELAY 30
 
-    const int trigPin1 = 22; // front left
-    const int echoPin1 = 23;
+// front left ultrasonic
+const int trigPin1 = 22;
+const int echoPin1 = 23;
 
-    const int trigPin2 = 24; // front right
-    const int echoPin2 = 25;
+// front right ultrasonic
+const int trigPin2 = 24;
+const int echoPin2 = 25;
 
-    const int trigPin3 = 28; // left side
-    const int echoPin3 = 29;
+// left side ultrasonic
+const int trigPin3 = 28;
+const int echoPin3 = 29;
 
-    const int trigPin4 = 26; // right side
-    const int echoPin4 = 27;
+// right side ultrasonic
+const int trigPin4 = 26;
+const int echoPin4 = 27;
 
-    NewPing sonar[SONAR_NUM] = {                  // Sensor object array.
-        NewPing(trigPin1, echoPin1, maxDistance), // Each sensor's trigger pin, echo pin, and max distance to ping.
-        NewPing(trigPin2, echoPin2, maxDistance),
-        NewPing(trigPin3, echoPin3, maxDistance),
-        NewPing(trigPin4, echoPin4, maxDistance)
-    };
+// ultrasonic array for library
+NewPing sonar[SONAR_NUM] = {
+    NewPing(trigPin1, echoPin1, maxDistance),
+    NewPing(trigPin2, echoPin2, maxDistance),
+    NewPing(trigPin3, echoPin3, maxDistance),
+    NewPing(trigPin4, echoPin4, maxDistance)};
 
-    const int frontLeftIR = 2;
-    const int frontRightIR = 3;
-    const int backLeftIR = 12;
-    const int backRightIR = 13;
+// ir line sensors
+const int frontLeftIR = 2;
+const int frontRightIR = 3;
+const int backLeftIR = 12;
+const int backRightIR = 4;
 
-    const int enaPin = 6;
-    const int in1Pin = 7;
-    const int in2Pin = 8;
+// motor driver
+const int enaPin = 6;
+const int in1Pin = 7;
+const int in2Pin = 8;
 
-    const int enbPin = 11;
-    const int in3Pin = 9;
-    const int in4Pin = 10;
+const int enbPin = 11;
+const int in3Pin = 9;
+const int in4Pin = 10;
 
-    VL6180X tofSensor;
-    // Adafruit_MPU6050 mpu; gyroscope broke,
+// front TOF sensor
+VL53L0X tofSensor;
 
-    unsigned long pingTimer[SONAR_NUM];
-    unsigned int ultrasonic_status[SONAR_NUM];
-    int currentSensor = 0;
+// accelerometer
+Adafruit_MPU6050 mpu;
 
-    int lineSensorStatus = 0;
-    bool tofStatus = 0;
+unsigned long pingTimer[SONAR_NUM]; // time when sensor pings
+int ultrasonic_status[SONAR_NUM];
+int currentSensor = 0;
 
-    bool turnDirection = true;
-    bool searchMode = false;
+int lineSensorStatus = 0;
+bool tofStatus = 0;
 
-    void setup()
+bool turnDirection = true; // true = clockwise, vice versa
+bool searchMode;
+unsigned long motorStopDelay;
+
+bool gotHit = false;
+
+void setup()
+{
+  Serial.begin(9600);
+    pinMode(LED_BUILTIN, OUTPUT);
+
+    pinMode(trigPin1, OUTPUT);
+    pinMode(trigPin2, OUTPUT);
+    pinMode(trigPin3, OUTPUT);
+    pinMode(trigPin4, OUTPUT);
+
+    pinMode(echoPin1, INPUT);
+    pinMode(echoPin2, INPUT);
+    pinMode(echoPin3, INPUT);
+    pinMode(echoPin4, INPUT);
+
+    pinMode(enaPin, OUTPUT);
+    pinMode(enbPin, OUTPUT);
+    pinMode(in1Pin, OUTPUT);
+    pinMode(in2Pin, OUTPUT);
+    pinMode(in3Pin, OUTPUT);
+    pinMode(in4Pin, OUTPUT);
+
+    pinMode(frontLeftIR, INPUT);
+    pinMode(frontRightIR, INPUT);
+    pinMode(backLeftIR, INPUT);
+    pinMode(backRightIR, INPUT);
+
+    tofSensor.init();
+    tofSensor.setTimeout(500);
+    tofSensor.startContinuous();
+
+    if (!mpu.begin())
     {
-        Serial.begin(9600);
-        pinMode(LED_BUILTIN, OUTPUT);
-        
-        pinMode(trigPin1, OUTPUT);
-        pinMode(trigPin2, OUTPUT);
-        pinMode(trigPin3, OUTPUT);
-        pinMode(trigPin4, OUTPUT);
-
-        pinMode(echoPin1, INPUT);
-        pinMode(echoPin2, INPUT);
-        pinMode(echoPin3, INPUT);
-        pinMode(echoPin4, INPUT);
-
-        pinMode(enaPin, OUTPUT);
-        pinMode(enbPin, OUTPUT);
-        pinMode(in1Pin, OUTPUT);
-        pinMode(in2Pin, OUTPUT);
-        pinMode(in3Pin, OUTPUT);
-        pinMode(in4Pin, OUTPUT);
-
-        tofSensor.init();
-        tofSensor.configureDefault();
-        tofSensor.setScaling(3);
-
-        tofSensor.writeReg(VL6180X::SYSRANGE__MAX_CONVERGENCE_TIME, 30);
-        tofSensor.writeReg16Bit(VL6180X::SYSALS__INTEGRATION_PERIOD, 50);
-
-        tofSensor.setTimeout(500);
-
-        tofSensor.stopContinuous();
-        delay(300);
-        tofSensor.startRangeContinuous(90);
-
-        matchStart();
-        for (int i = 1; i < SONAR_NUM; i++)
-            pingTimer[i] = pingTimer[i - 1] + PING_INTERVAL;
+        while (1)
+        {
+            delay(10);
+        }
     }
 
-    void loop()
+    mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
+    mpu.setGyroRange(MPU6050_RANGE_500_DEG);
+    mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
+    mpu.setTemperatureStandby(true);
+    mpu.setGyroStandby(true, true, true);
+    mpu.setAccelerometerStandby(false, false, true);
+
+    matchStart();
+
+    // set the time for the sensors to ping
+    for (int i = 1; i < SONAR_NUM; i++)
+        pingTimer[i] = pingTimer[i - 1] + PING_INTERVAL;
+}
+
+void loop()
+{
+    // ultrasonic sensor ping
+    for (int i = 0; i < 4; i++)
     {
-        for (int i = 0; i < 4; i++)
+        if (millis() >= pingTimer[i])
         {
-            if (millis() >= pingTimer[i])
+            pingTimer[i] += PING_INTERVAL * SONAR_NUM;
+            if (i == 0 && currentSensor == SONAR_NUM - 1)
             {
-                pingTimer[i] += PING_INTERVAL * SONAR_NUM;
-                if (i == 0 && currentSensor == SONAR_NUM - 1)
-                {
-                    oneSensorCycle();
-                }
-                if (i == 3)
-                {
-                    frontSensorStatus();
-                }
-                sonar[currentSensor].timer_stop();
-                currentSensor = i;
-                ultrasonic_status[currentSensor] = 0;
-                sonar[currentSensor].ping_timer(echoCheck);
+                oneSensorCycle();
             }
-        }
-        sensorCheck();
-        /*
-        switch (lineSensorStatus)
-        {
-        case 1:
-            setMotorSpeed(180);
-            turnDirection = true;
-            break;
-        case 2:
-            setMotorSpeed(180);
-            turnDirection = false;
-            break;
-        case 3:
-            setMotorSpeed(180);
-            turnDirection = true;
-            break;
-        case 4:
-            setMotorSpeed(180);
-            turnDirection = false;
-            break;
-        } */
-
-        if (searchMode) {
-            digitalWrite(LED_BUILTIN, HIGH);
-            Serial.println("Search Mode Activated.");
-        }
-        else {
-            digitalWrite(LED_BUILTIN, LOW);
-            Serial.println("Search Mode OFF.");
-        }
-        Serial.println(currentSensor);
-    }
-
-    void echoCheck()
-    {
-        if (sonar[currentSensor].check_timer())
-            ultrasonic_status[currentSensor] = 1;
-    }
-
-    void sensorCheck()
-    {
-        if (digitalRead(frontLeftIR))
-        {
-            lineSensorStatus = 1;
-        }
-        else if (digitalRead(frontRightIR))
-        {
-            lineSensorStatus = 2;
-        }
-        else if (digitalRead(backLeftIR))
-        {
-            lineSensorStatus = 3;
-        }
-        else if (digitalRead(backRightIR))
-        {
-            lineSensorStatus = 4;
-        }
-        else
-        {
-            lineSensorStatus = 0;
-        }
-    }
-
-    void matchStart()
-    {
-        int distance_front = tofSensor.readRangeContinuousMillimeters();
-        while (distance_front < 300)
-        {
-            distance_front = tofSensor.readRangeContinuousMillimeters();
-        }
-    }
-
-    void oneSensorCycle()
-    {
-        Serial.print(ultrasonic_status[0]);
-        Serial.print(", ");
-        Serial.print(ultrasonic_status[1]);
-        Serial.print(", ");
-        Serial.print(ultrasonic_status[2]);
-        Serial.print(", ");
-        Serial.println(ultrasonic_status[3]);
-
-        if (ultrasonic_status[0])
-        {
-            Serial.println("Front left ultrasonic triggered.");
-            if (searchMode) {
-                setMotorSpeed(0,0);
-                delay(1000);
+            if (i == 3)
+            {
+                frontSensorStatus();
             }
+            sonar[currentSensor].timer_stop();
+            currentSensor = i;
+            ultrasonic_status[currentSensor] = 0;
+            sonar[currentSensor].ping_timer(echoCheck);
+        }
+    }
 
+    linesensorCheck();
+
+    switch (lineSensorStatus)
+    {
+    case 1:
+        setMotorSpeed(-255, -185);
+        turnDirection = true;
+        Serial.println("See black line is front left.");
+        break;
+    case 2:
+        setMotorSpeed(-185, -255);
+        turnDirection = false;
+         Serial.println("See black line is front right.");
+        break;
+    case 3:
+        setMotorSpeed(255, 185);
+        turnDirection = true;
+        Serial.println("See black line is back left.");
+        break;
+    case 4:
+        setMotorSpeed(185, 255);
+        turnDirection = false;
+        Serial.println("See black line is back right.");
+        break;
+    default:
+        accelCheck();
+        Serial.println("Checking accel.");
+    }
+
+    // remove once robot is complete
+    if (searchMode)
+    {
+        digitalWrite(LED_BUILTIN, HIGH);
+    }
+    else
+    {
+        digitalWrite(LED_BUILTIN, LOW);
+    }
+}
+
+void echoCheck()
+{
+    // check if ultrasonic returns a measurement
+    if (sonar[currentSensor].check_timer())
+        ultrasonic_status[currentSensor] = 1;
+}
+
+void linesensorCheck()
+{
+    if (digitalRead(frontLeftIR))
+    {
+        lineSensorStatus = 1;
+    }
+    else if (digitalRead(frontRightIR))
+    {
+        lineSensorStatus = 2;
+    }
+    else if (digitalRead(backLeftIR))
+    {
+        lineSensorStatus = 3;
+    }
+    else if (digitalRead(backRightIR))
+    {
+        lineSensorStatus = 4;
+    }
+    else
+    {
+        lineSensorStatus = 0;
+    }
+}
+
+void accelCheck()
+{
+    sensors_event_t a, g, temp;
+    mpu.getEvent(&a, &g, &temp);
+
+    int sideAccelerationY = a.acceleration.y;
+    int sideAccelerationX = a.acceleration.x;
+    if ((abs(sideAccelerationX) > 4) || (abs(sideAccelerationY) > 4))
+    {
+        gotHit = true;
+    }
+}
+
+void matchStart()
+{
+    int distance_front = tofSensor.readRangeContinuousMillimeters();
+    while (distance_front < 500)
+    {
+        distance_front = tofSensor.readRangeContinuousMillimeters();
+    }
+}
+
+void oneSensorCycle()
+{
+    if (ultrasonic_status[0])
+    {
+        if (searchMode)
+        {
+            setMotorSpeed(0, 0);
+            motorStopDelay = millis() + MOTOR_DELAY;
+            searchMode = false;
+        }
+
+        if (millis() > motorStopDelay)
+        {
             if (tofStatus)
             {
-                Serial.println("Front left ultrasonic AND TOF sensor triggered.");
                 if (ultrasonic_status[1])
                 { // enemy is directly in front
-                    Serial.println("All sensors triggered.");
-                    setMotorSpeed(180, 180);
-                    searchMode = false;
+                  Serial.println("Enemy is directly in front.");
+                    setMotorSpeed(255, 255);
                 }
                 else
                 {
-                    setMotorSpeed(90, 180); // enemy is to the front left of the robot, go slight left but forwards
-                    searchMode = false;
+                    setMotorSpeed(200, 255); // enemy is to the front left of the robot, go slight left but forwards
+                    Serial.println("Enemy is slight left.");
                 }
             }
             else
-            {    
-                Serial.println("Confirmed only front left ultrasonic is triggered."); // enemy is to the left of the robot, go left harder  but also a bit forwards
-                if (searchMode) {
-                    setMotorSpeed(0, 70);
-                }
-                else {
-                    setMotorSpeed(125, 180);
-                }
-                searchMode = false;
+            {
+                // enemy is to the left of the robot, go left harder  but also a bit forwards
+                setMotorSpeed(185, 255);
+                Serial.println("Enemy is left.");
             }
         }
-        else if (tofStatus)
-        {
-            Serial.println("TOF sensor is triggered.");
-            if (searchMode) {
-                setMotorSpeed(0,0);
-                delay(1000);
-            }
 
-            if (ultrasonic_status[1])
-            {
-                Serial.println("Both TOF and right ultrasonic sensor are triggered.");
-                setMotorSpeed(180, 90); // enemy is to the front right of the robot, go slight right but forwards
-            }
-            else
-            { // enemy is straight on, go forwards
-                Serial.println("Confirmed only TOF sensor is triggered.");
-                setMotorSpeed(180, 180);
-            }
+        gotHit = false;
+    }
+    else if (tofStatus)
+    {
+        searchMode = false;
+        if (ultrasonic_status[1])
+        {
+            setMotorSpeed(255, 200); // enemy is to the front right of the robot, go slight right but forwards
+             Serial.println("Enemy is front right.");
+        }
+        else
+        { // enemy is straight on, go forwards
+            setMotorSpeed(255, 255);
+             Serial.println("Enemy is straight on.");
+        }
+
+        gotHit = false;
+    }
+    else if (ultrasonic_status[1])
+    {
+        if (searchMode)
+        {
+            setMotorSpeed(0, 0);
+            motorStopDelay = millis() + MOTOR_DELAY;
             searchMode = false;
         }
-        else if (ultrasonic_status[1])
+
+        if (millis() > motorStopDelay)
         {
             // enemy is to the right of the robot, go right harder, but also a bit forwards
-            Serial.println("Front right ultrasonic is triggered.");
-            if (searchMode) {
-                setMotorSpeed(0,0);
-                delay(1000);
-            }
-            
-            if (searchMode) {
-                setMotorSpeed(70, 0);
-            }
-            else {
-                setMotorSpeed(180, 125);
-            }
-            searchMode = false;
+            setMotorSpeed(255, 185);
+             Serial.println("Enemy is right.");
         }
+
+        gotHit = false;
+    }
     else
-        { // search mode
-            searchMode = true;
-            setMotorSpeed(70, 70);
-            if (ultrasonic_status[2])
-            {
-                Serial.println("Back left ultrasonic is triggered.");
-                turnOnTheSpot(true);
-                turnDirection = true;
-            }
-            else if (ultrasonic_status[3])
-            {
-                Serial.println("Back right ultrasonic is triggered.");
-                turnOnTheSpot(false);
-                turnDirection = false;
-            }
-            else
-            {
-                Serial.println("No sensors are triggered, reverting to past data.");
-                turnOnTheSpot(turnDirection);
-            }
-        }
+    { // search mode
+        searchMode = true;
 
-        pingTimer[0] = millis() + 10;
-        for (int i = 1; i < SONAR_NUM; i++)
-            pingTimer[i] = pingTimer[i - 1] + PING_INTERVAL;
-    }
-
-    void frontSensorStatus()
-    {
-        int distance = tofSensor.readRangeContinuousMillimeters();
-        if (distance != 765)
+        if (gotHit)
         {
-            tofStatus = 1;
+            setMotorSpeed(100, 100);
         }
         else
         {
-            tofStatus = 0;
+            setMotorSpeed(75, 75);
         }
-    }
 
-    void turnOnTheSpot(bool direction)
-    {
-        if (direction)
+        if (ultrasonic_status[2])
         {
-            digitalWrite(in1Pin, HIGH);
-            digitalWrite(in2Pin, LOW);
-
-            digitalWrite(in3Pin, HIGH);
-            digitalWrite(in4Pin, LOW);
+            turnOnTheSpot(true);
+            turnDirection = true;
+        }
+        else if (ultrasonic_status[3])
+        {
+            turnOnTheSpot(false);
+            turnDirection = false;
         }
         else
         {
-            digitalWrite(in1Pin, LOW);
-            digitalWrite(in2Pin, HIGH);
-
-            digitalWrite(in3Pin, LOW);
-            digitalWrite(in4Pin, HIGH);
+            turnOnTheSpot(turnDirection);
         }
     }
 
-    void setMotorSpeed(int speedB, int speedA)
+    pingTimer[0] = millis() + 10;
+    for (int i = 1; i < SONAR_NUM; i++)
+        pingTimer[i] = pingTimer[i - 1] + PING_INTERVAL;
+}
+
+void frontSensorStatus()
+{
+    int distance = tofSensor.readRangeContinuousMillimeters();
+    if (distance < 500)
     {
-        if (speedA < 0) {
-            digitalWrite(in1Pin, LOW);
-            digitalWrite(in2Pin, HIGH);
-            speedA = abs(speedA);
-        }
-        else {
-            digitalWrite(in1Pin, HIGH);
-            digitalWrite(in2Pin, LOW);
-        }
-        if (speedB < 0) {
-            digitalWrite(in3Pin, HIGH);
-            digitalWrite(in4Pin, LOW);
-            speedB = abs(speedB);
-        }
-        else {
-            digitalWrite(in3Pin, LOW);
-            digitalWrite(in4Pin, HIGH);
-        }
-        
-        analogWrite(enaPin, speedA);
-        analogWrite(enbPin, speedB);
+        tofStatus = 1;
     }
+    else
+    {
+        tofStatus = 0;
+    }
+}
+
+void turnOnTheSpot(bool direction)
+{
+    if (direction)
+    {
+        digitalWrite(in1Pin, HIGH);
+        digitalWrite(in2Pin, LOW);
+
+        digitalWrite(in3Pin, HIGH);
+        digitalWrite(in4Pin, LOW);
+    }
+    else
+    {
+        digitalWrite(in1Pin, LOW);
+        digitalWrite(in2Pin, HIGH);
+
+        digitalWrite(in3Pin, LOW);
+        digitalWrite(in4Pin, HIGH);
+    }
+}
+
+void setMotorSpeed(int speedB, int speedA)
+{
+    if (speedA < 0)
+    {
+        digitalWrite(in1Pin, LOW);
+        digitalWrite(in2Pin, HIGH);
+        speedA = abs(speedA);
+    }
+    else
+    {
+        digitalWrite(in1Pin, HIGH);
+        digitalWrite(in2Pin, LOW);
+    }
+    if (speedB < 0)
+    {
+        digitalWrite(in3Pin, HIGH);
+        digitalWrite(in4Pin, LOW);
+        speedB = abs(speedB);
+    }
+    else
+    {
+        digitalWrite(in3Pin, LOW);
+        digitalWrite(in4Pin, HIGH);
+    }
+
+    analogWrite(enaPin, speedA);
+    analogWrite(enbPin, speedB);
+}
